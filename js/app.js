@@ -880,3 +880,29 @@ exportFavoritesBtn.addEventListener('click', () => {
         playlistBar.style.display = 'none';
     }
 })();
+// --- Keyboard Shortcuts for Channel Navigation and Volume Control ---
+document.addEventListener('keydown', (event) => {
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+    if (event.key === 'ArrowRight') {
+        const currentIndex = allChannels.findIndex(ch => ch.url === currentChannelUrl);
+        if (currentIndex < allChannels.length - 1) {
+            playStream(allChannels[currentIndex + 1].url);
+            showPlayerNotification(`Playing: ${allChannels[currentIndex + 1].name}`, 2000);
+        }
+    } else if (event.key === 'ArrowLeft') {
+        const currentIndex = allChannels.findIndex(ch => ch.url === currentChannelUrl);
+        if (currentIndex > 0) {
+            playStream(allChannels[currentIndex - 1].url);
+            showPlayerNotification(`Playing: ${allChannels[currentIndex - 1].name}`, 2000);
+        }
+    } else if (event.key === 'ArrowUp') {
+        const newVolume = Math.min(player.volume + 0.1, 1);
+        player.volume = newVolume;
+        showPlayerNotification(`Volume: ${Math.round(newVolume * 100)}%`, 1500);
+    } else if (event.key === 'ArrowDown') {
+        const newVolume = Math.max(player.volume - 0.1, 0);
+        player.volume = newVolume;
+        showPlayerNotification(`Volume: ${Math.round(newVolume * 100)}%`, 1500);
+    }
+});
