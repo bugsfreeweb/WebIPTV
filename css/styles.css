@@ -135,9 +135,9 @@ body.light .localtime-bar { background: #e5e7eb; color: #222; }
     font-weight: 600;
 }
 .upload-panel input[type="file"] {
-    width: 100%;
+    width: 90%;
     padding: 10px 13px;
-    margin-bottom: 6px;
+    margin: 6px 0px 6px 0px;
     background: #232532;
     color: #e0e0e0;
     border: 1.5px solid #232730;
@@ -252,6 +252,31 @@ body.light .localtime-bar { background: #e5e7eb; color: #222; }
     min-height: 44px;
     max-height: 100%;
 }
+.history-list-bar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0 0 0;
+    background: inherit;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+}
+.history-deleteall-btn {
+    background: #dc3545;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: 0.94rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.16s, color 0.16s;
+}
+.history-deleteall-btn:hover {
+    background: #a81b2f;
+}
 .favorites-list-bar {
     position: sticky;
     bottom: 0;
@@ -304,6 +329,9 @@ body.light .localtime-bar { background: #e5e7eb; color: #222; }
     object-fit: contain;
     border-radius: 7px;
     background: #f5f6fa;
+}
+.default-logo {
+    background: #f2f2f2;
 }
 .channel-list .favorite-btn, .favorites-list .favorite-btn {
     margin-left: auto;
@@ -412,6 +440,11 @@ body.light .localtime-bar { background: #e5e7eb; color: #222; }
 .player-notification.show {
     opacity: 1;
     pointer-events: auto;
+}
+.player-notification .spinner {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
 }
 .hide-on-idle {
     opacity: 1;

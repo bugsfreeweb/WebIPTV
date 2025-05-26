@@ -1,3 +1,82 @@
+const PLAYER_POSTER = "https://bugsfreecdn.netlify.app/BugsfreeDefault/player-poster.webp";
+const DEFAULT_LOGO = "https://bugsfreecdn.netlify.app/BugsfreeDefault/logo.png";
+
+// --- M3U Playlist Parser (must be defined before use) ---
+function parseM3U(content) {
+    try {
+        const lines = content.split('\n');
+        const channels = [];
+        let currentChannel = null;
+        lines.forEach(line => {
+            line = line.trim();
+            if (line.startsWith('#EXTINF')) {
+                const nameMatch = line.match(/,(.+)$/);
+                const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+                currentChannel = {
+                    name: nameMatch ? nameMatch[1] : 'Unknown Channel',
+                    logo: logoMatch ? logoMatch[1] : null
+                };
+            } else if (line && !line.startsWith('#') && currentChannel) {
+                currentChannel.url = line;
+                channels.push(currentChannel);
+                currentChannel = null;
+            }
+        });
+        allChannels = channels;
+        localStorage.setItem('lastPlaylist', JSON.stringify(channels));
+        displayChannels(channels);
+        if (channels.length > 0) {
+            playStream(channels[0].url);
+        }
+    } catch (e) {
+        showPlayerNotification("❌ Failed to parse M3U playlist", 3200);
+    }
+}
+
+// --- Secure short encryption/decryption (Base64url + XOR + SHA1-based key) ---
+async function sha1(str) {
+    const buffer = new TextEncoder().encode(str);
+    const hash = await crypto.subtle.digest('SHA-1', buffer);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function base64urlEncode(str) {
+    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function base64urlDecode(str) {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    return atob(str);
+}
+async function encryptChannelUrl(url) {
+    const key = (await sha1(url)).substring(0, 16);
+    let result = '';
+    for (let i = 0; i < url.length; i++) {
+        result += String.fromCharCode(url.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return base64urlEncode(result).substring(0, 28);
+}
+async function decryptChannelUrl(enc, origList = null) {
+    if (origList) {
+        for (const url of origList) {
+            const tryEnc = await encryptChannelUrl(url);
+            if (tryEnc === enc) return url;
+        }
+    }
+    let allUrls = [];
+    try {
+        const hist = JSON.parse(localStorage.getItem('history')) || [];
+        allUrls = allUrls.concat(hist.filter(h=>h.url).map(h=>h.url));
+        const pl = JSON.parse(localStorage.getItem('lastPlaylist')) || [];
+        allUrls = allUrls.concat(pl.map(c=>c.url));
+    } catch {}
+    for (const url of allUrls) {
+        const tryEnc = await encryptChannelUrl(url);
+        if (tryEnc === enc) return url;
+    }
+    throw new Error("Cannot decode channel link.");
+}
+
+// --- Local Time Bar ---
 function updateLocalTime() {
     const el = document.getElementById('localTime');
     const d = new Date();
@@ -19,7 +98,6 @@ function refreshFeather() {
 refreshFeather();
 
 const player = document.getElementById('player');
-const status = document.getElementById('status');
 const fileInput = document.getElementById('fileInput');
 const urlInput = document.getElementById('urlInput');
 const loadUrlBtn = document.getElementById('loadUrl');
@@ -44,6 +122,9 @@ let currentChannelUrl = null;
 let analysisLast = { total: 0, online: 0, offline: 0, list: [], onlineList: [], offlineList: [] };
 let analysisMode = 'total';
 let analysisInProgress = false;
+let playlistName = localStorage.getItem('playlistName') || '';
+
+player.poster = PLAYER_POSTER;
 
 // --- Player Notification ---
 function showPlayerNotification(msg, duration = 2600) {
@@ -57,12 +138,31 @@ function showPlayerNotification(msg, duration = 2600) {
     note.innerHTML = msg;
     note.classList.add('show');
     if (note._timeout) clearTimeout(note._timeout);
-    note._timeout = setTimeout(() => {
-        note.classList.remove('show');
-    }, duration);
+    if (duration !== 0) {
+        note._timeout = setTimeout(() => {
+            note.classList.remove('show');
+        }, duration);
+    }
+}
+function hidePlayerNotification() {
+    let note = document.getElementById('playerNotification');
+    if (note) note.classList.remove('show');
 }
 
-// --- Duplicate Upload Check ---
+function playerSpinner(visible, msg) {
+    // Centered overlay, always
+    if (visible) {
+        showPlayerNotification(
+            `<span class="spinner"><svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg></span> ${msg || "Loading Stream..."}`, 0
+        );
+    } else {
+        hidePlayerNotification();
+    }
+}
+
 function isDuplicateUpload({type, name, url}) {
     if (type === 'url') {
         return history.some(h => h.type === 'url' && (h.url === url || h.name === name));
@@ -73,7 +173,6 @@ function isDuplicateUpload({type, name, url}) {
     return false;
 }
 
-// --- Mouse Idle UI Toggle Logic ---
 let idleTimeout = null;
 let idleHideMs = 2200;
 function setUiIdle(yes) {
@@ -146,6 +245,7 @@ document.querySelectorAll('.tab').forEach(tab => {
             else if(analysisMode==="online") document.getElementById('showOnline').classList.add('active');
             else if(analysisMode==="offline") document.getElementById('showOffline').classList.add('active');
         }
+        if(tab.dataset.tab==="history") displayHistory();
     });
 });
 
@@ -202,89 +302,34 @@ function sanitizeString(str) {
     return result;
 }
 
-function playStream(url, retry = false) {
-    if (!url) {
-        status.textContent = "Bugsfree Studio";
-        return;
-    }
-    status.innerHTML = `
-        <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        Loading Stream...
-    `;
-    currentChannelUrl = url;
-    highlightPlaylist();
-    try {
-        if (dashPlayer) {
-            dashPlayer.reset(); dashPlayer = null;
+async function handleChannelInUrl(allList) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('channel')) {
+        const encChannel = params.get('channel');
+        try {
+            const url = await decryptChannelUrl(encChannel, allList);
+            playStream(url, false, true);
+            localStorage.removeItem('lastPlaylist');
+            channelList.innerHTML = '';
+            allChannels = [];
+            return true;
+        } catch (e) {
+            showPlayerNotification("Invalid encrypted channel!", 3200);
+            return false;
         }
-        const setError = (message) => {
-            status.innerHTML = `<div class="status-error"><span>❌ ${message}</span>
-                <button class="retry-btn" onclick="playStream('${sanitizeString(url)}', true)">Retry</button></div>`;
-        };
-        if (url.includes('.m3u8') || url.includes('.ts')) {
-            if (Hls.isSupported()) {
-                const hls = new Hls({ enableWorker: false });
-                hls.loadSource(url);
-                hls.attachMedia(player);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    player.play().then(() => { player.muted = false; status.style.display = 'none'; }).catch(() => { setError("Autoplay failed. Please press play."); });
-                });
-                hls.on(Hls.Events.ERROR, (event, data) => {
-                    setError(data.type === Hls.ErrorTypes.NETWORK_ERROR ? "Network error loading stream" : "Stream could not be loaded");
-                });
-            } else { setError("HLS is not supported in this browser"); }
-        } else if (url.includes('.mpd')) {
-            dashPlayer = dashjs.MediaPlayer().create();
-            dashPlayer.initialize(player, url, true);
-            dashPlayer.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-                player.play().then(() => { player.muted = false; status.style.display = 'none'; }).catch(() => { setError("Autoplay failed. Please press play."); });
-            });
-            dashPlayer.on(dashjs.MediaPlayer.events.ERROR, () => { setError("Stream could not be loaded"); });
-        } else if (url.includes('.mp4') || url.match(/^(http|https|rtmp):\/\//)) {
-            player.src = url;
-            player.oncanplay = () => {
-                player.play().then(() => { status.style.display = 'none'; }).catch(() => { setError("Autoplay failed. Please press play."); });
-            };
-            player.onerror = () => { setError("Stream could not be loaded"); };
-        } else {
-            setError("Unsupported stream format");
-        }
-    } catch (e) {
-        status.innerHTML = `<div class="status-error"><span>❌ Failed to load stream due to an error.</span>
-            <button class="retry-btn" onclick="playStream('${sanitizeString(url)}', true)">Retry</button></div>`;
     }
+    return false;
 }
 
-function parseM3U(content) {
+function shortenUrl(url) {
     try {
-        const lines = content.split('\n');
-        const channels = [];
-        let currentChannel = null;
-        lines.forEach(line => {
-            line = line.trim();
-            if (line.startsWith('#EXTINF')) {
-                const nameMatch = line.match(/,(.+)$/);
-                const logoMatch = line.match(/tvg-logo="([^"]+)"/);
-                currentChannel = {
-                    name: nameMatch ? nameMatch[1] : 'Unknown Channel',
-                    logo: logoMatch ? logoMatch[1] : null
-                };
-            } else if (line && !line.startsWith('#') && currentChannel) {
-                currentChannel.url = line;
-                channels.push(currentChannel);
-                currentChannel = null;
-            }
-        });
-        allChannels = channels;
-        localStorage.setItem('lastPlaylist', JSON.stringify(channels));
-        displayChannels(channels);
-        if (channels.length > 0) {
-            playStream(channels[0].url);
-        }
-    } catch (e) { status.textContent = "❌ Failed to parse M3U playlist"; }
+        const u = new URL(url);
+        let host = u.host.replace(/^www\./, '');
+        let path = u.pathname.length > 20 ? u.pathname.slice(0, 16) + '…' : u.pathname;
+        return `${host}${path}`;
+    } catch {
+        return url.length > 24 ? url.slice(0, 20) + '…' : url;
+    }
 }
 
 function highlightPlaylist() {
@@ -304,30 +349,80 @@ function highlightPlaylist() {
     });
 }
 
-function shortenUrl(url) {
-    try {
-        const u = new URL(url);
-        let host = u.host.replace(/^www\./, '');
-        let path = u.pathname.length > 20 ? u.pathname.slice(0, 16) + '…' : u.pathname;
-        return `${host}${path}`;
-    } catch {
-        return url.length > 24 ? url.slice(0, 20) + '…' : url;
+// --- ENCRYPTED URL UPDATE ON CHANNEL CHANGE ---
+async function playStream(url, retry = false, skipUpdateUrl = false) {
+    if (!url) {
+        showPlayerNotification("Bugsfree Studio", 2000);
+        return;
     }
+    playerSpinner(true, "Loading Stream...");
+    currentChannelUrl = url;
+    highlightPlaylist();
+    if (!skipUpdateUrl) {
+        const enc = await encryptChannelUrl(url);
+        window.history.replaceState({}, '', window.location.pathname + `?channel=${enc}`);
+    }
+    try {
+        if (dashPlayer) {
+            dashPlayer.reset(); dashPlayer = null;
+        }
+        function silentFail() {
+            playerSpinner(false);
+            player.pause();
+        }
+        if (url.includes('.m3u8') || url.includes('.ts')) {
+            if (Hls.isSupported()) {
+                const hls = new Hls({ enableWorker: false });
+                hls.loadSource(url);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    player.play().then(() => { player.muted = false; playerSpinner(false); }).catch(silentFail);
+                });
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    silentFail();
+                });
+            } else {
+                silentFail();
+            }
+        } else if (url.includes('.mpd')) {
+            dashPlayer = dashjs.MediaPlayer().create();
+            dashPlayer.initialize(player, url, true);
+            dashPlayer.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
+                player.play().then(() => { player.muted = false; playerSpinner(false); }).catch(silentFail);
+            });
+            dashPlayer.on(dashjs.MediaPlayer.events.ERROR, () => { silentFail(); });
+        } else if (url.includes('.mp4') || url.match(/^(http|https|rtmp):\/\//)) {
+            player.src = url;
+            player.oncanplay = () => {
+                player.play().then(() => { playerSpinner(false); }).catch(silentFail);
+            };
+            player.onerror = () => { silentFail(); };
+        } else {
+            silentFail();
+        }
+    } catch (e) {
+        playerSpinner(false);
+    }
+}
+
+function getLogoHtml(logo, name) {
+    const sanitizedLogo = logo ? sanitizeString(logo) : DEFAULT_LOGO;
+    const sanitizedName = sanitizeString(name || "");
+    return `<img src="${sanitizedLogo}" alt="${sanitizedName}" class="ch-logo" onerror="this.onerror=null;this.src='${DEFAULT_LOGO}';this.classList.add('default-logo');">`;
 }
 
 function displayChannels(channels) {
     channelList.innerHTML = channels.map(ch => {
         const sanitizedUrl = sanitizeString(ch.url);
         const sanitizedName = sanitizeString(ch.name);
-        const sanitizedLogo = ch.logo ? sanitizeString(ch.logo) : '';
         const isFavorited = favorites.some(f => f.url === ch.url);
         const isCurrent = sanitizedUrl === currentChannelUrl;
         return `
             <button data-url="${sanitizedUrl}" class="${isCurrent ? 'playlist-current' : ''} ${isFavorited ? 'playlist-favorite' : ''}" onclick="playStream('${sanitizedUrl}')">
-                ${sanitizedLogo ? `<img src="${sanitizedLogo}" alt="${sanitizedName}" onerror="this.style.display='none'">` : ''}
+                ${getLogoHtml(ch.logo, ch.name)}
                 <i data-feather="tv" class="w-5 h-5"></i> ${sanitizedName}
                 <span style="margin-left:auto;display:flex;align-items:center;">
-                    <i data-feather="heart" class="favorite-btn w-5 h-5 ${isFavorited ? 'text-red-500' : ''}" onclick="event.stopPropagation(); window.toggleFavorite('${sanitizedUrl}', '${sanitizedName}', '${sanitizedLogo}')"></i>
+                    <i data-feather="heart" class="favorite-btn w-5 h-5 ${isFavorited ? 'text-red-500' : ''}" onclick="event.stopPropagation(); window.toggleFavorite('${sanitizedUrl}', '${sanitizedName}', '${sanitizeString(ch.logo)}')"></i>
                 </span>
             </button>
         `;
@@ -352,14 +447,12 @@ function displayFavorites() {
     favoritesList.innerHTML = favorites.length > 0 ? favorites.map(f => {
         const sanitizedUrl = sanitizeString(f.url);
         const sanitizedName = sanitizeString(f.name);
-        const sanitizedLogo = f.logo ? sanitizeString(f.logo) : '';
-        const isCurrent = sanitizedUrl === currentChannelUrl;
         return `
-            <button data-url="${sanitizedUrl}" class="playlist-favorite${isCurrent ? ' playlist-current' : ''}" onclick="playStream('${sanitizedUrl}')">
-                ${sanitizedLogo ? `<img src="${sanitizedLogo}" alt="${sanitizedName}" onerror="this.style.display='none'">` : ''}
+            <button data-url="${sanitizedUrl}" class="playlist-favorite${sanitizedUrl === currentChannelUrl ? ' playlist-current' : ''}" onclick="playStream('${sanitizedUrl}')">
+                ${getLogoHtml(f.logo, f.name)}
                 <i data-feather="tv" class="w-5 h-5"></i> ${sanitizedName}
                 <span style="margin-left:auto;display:flex;align-items:center;">
-                    <i data-feather="heart" class="favorite-btn w-5 h-5 text-red-500" onclick="event.stopPropagation(); window.toggleFavorite('${sanitizedUrl}', '${sanitizedName}', '${sanitizedLogo}')"></i>
+                    <i data-feather="heart" class="favorite-btn w-5 h-5 text-red-500" onclick="event.stopPropagation(); window.toggleFavorite('${sanitizedUrl}', '${sanitizedName}', '${sanitizeString(f.logo)}')"></i>
                 </span>
             </button>
         `;
@@ -369,26 +462,37 @@ function displayFavorites() {
 }
 
 function displayHistory() {
-    historyList.innerHTML = history.length > 0 ? history.map((h, i) => {
-        let label = h.name;
-        if (h.type === "url" && h.name && /^https?:\/\//.test(h.name)) {
-            label = shortenUrl(h.name);
-        }
-        const sanitizedLabel = sanitizeString(label);
-        return `
-            <button>
-                <span class="history-label"><i data-feather="${h.type === 'file' ? 'file' : 'link'}" class="w-5 h-5"></i> ${sanitizedLabel}</span>
-                <span style="margin-left:auto;display:flex;align-items:center;">
-                    <i data-feather="refresh-cw" class="action-btn w-5 h-5" title="Resync" onclick="event.stopPropagation(); window.loadHistoryFile(${i})"></i>
-                    <i data-feather="trash-2" class="delete-btn w-5 h-5" title="Delete" onclick="event.stopPropagation(); window.deleteHistory(${i})"></i>
-                </span>
-            </button>
+    let html = '';
+    if (history.length > 0) {
+        html += history.map((h, i) => {
+            let label = h.name;
+            if (h.type === "url" && h.name && /^https?:\/\//.test(h.name)) {
+                label = shortenUrl(h.name);
+            }
+            const sanitizedLabel = sanitizeString(label);
+            return `
+                <button>
+                    <span class="history-label"><i data-feather="${h.type === 'file' ? 'file' : 'link'}" class="w-5 h-5"></i> ${sanitizedLabel}</span>
+                    <span style="margin-left:auto;display:flex;align-items:center;">
+                        <i data-feather="refresh-cw" class="action-btn w-5 h-5" title="Resync" onclick="event.stopPropagation(); window.loadHistoryFile(${i})"></i>
+                        <i data-feather="trash-2" class="delete-btn w-5 h-5" title="Delete" onclick="event.stopPropagation(); window.deleteHistory(${i})"></i>
+                    </span>
+                </button>
+            `;
+        }).join('');
+        html += `
+            <div class="history-list-bar">
+                <button class="history-deleteall-btn" onclick="window.deleteAllHistory()"><i data-feather="trash-2" style="vertical-align: middle;"></i> Delete All</button>
+            </div>
         `;
-    }).join('') : '<p>No history available.</p>';
+    } else {
+        html = '<p>No history available.</p>';
+    }
+    historyList.innerHTML = html;
     refreshFeather();
 }
 
-window.loadHistoryFile = function(index) {
+window.loadHistoryFile = async function(index) {
     const item = history[index];
     if (item.type === 'file' && item.content) {
         if (item.name.endsWith('.m3u')) {
@@ -397,32 +501,51 @@ window.loadHistoryFile = function(index) {
             try {
                 const json = JSON.parse(item.content);
                 if (json.url) {
-                    playStream(json.url);
+                    await playStream(json.url);
                     localStorage.removeItem('lastPlaylist');
                     channelList.innerHTML = '';
                     allChannels = [];
                 }
-            } catch {
-                status.textContent = "❌ Invalid JSON file";
-            }
+            } catch {}
         } else if (item.name.endsWith('.txt')) {
             if (item.content.trim()) {
-                playStream(item.content.trim());
+                await playStream(item.content.trim());
                 localStorage.removeItem('lastPlaylist');
                 channelList.innerHTML = '';
                 allChannels = [];
             }
         }
     } else if (item.type === 'url' && item.url) {
-        playStream(item.url);
+        if (item.url.endsWith('.m3u')) {
+            fetch(item.url)
+                .then(res => res.text())
+                .then(parseM3U)
+                .catch(() => {});
+        } else {
+            await playStream(item.url);
+            localStorage.removeItem('lastPlaylist');
+            channelList.innerHTML = '';
+            allChannels = [];
+        }
     }
-}
+};
 
 window.deleteHistory = function(index) {
     history.splice(index, 1);
     localStorage.setItem('history', JSON.stringify(history));
     displayHistory();
-}
+    showPlayerNotification("History entry deleted.", 1800);
+};
+
+window.deleteAllHistory = function() {
+    if (!history.length) return;
+    if (confirm("Are you sure you want to delete all history?")) {
+        history = [];
+        localStorage.setItem('history', JSON.stringify(history));
+        displayHistory();
+        showPlayerNotification("All history deleted.", 2000);
+    }
+};
 
 async function analyzePlaylist(manual=false) {
     analysisText.textContent = manual ? "Checking status..." : "Checking...";
@@ -493,7 +616,7 @@ fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (isDuplicateUpload({type:'file', name:file.name})) {
-        showPlayerNotification("Duplicate file upload detected!");
+        showPlayerNotification("Duplicate file upload detected!", 2000);
         return;
     }
     const reader = new FileReader();
@@ -504,6 +627,7 @@ fileInput.addEventListener('change', (e) => {
         displayHistory();
         if (file.name.endsWith('.m3u')) {
             parseM3U(content);
+            localStorage.setItem('playlistName', file.name || 'Playlist');
         } else if (file.name.endsWith('.json')) {
             try {
                 const json = JSON.parse(content);
@@ -512,10 +636,18 @@ fileInput.addEventListener('change', (e) => {
                     localStorage.removeItem('lastPlaylist');
                     channelList.innerHTML = '';
                     allChannels = [];
+                } else if (Array.isArray(json.channels)) {
+                    allChannels = json.channels.map(ch => ({
+                        name: ch.name || 'Unknown Channel',
+                        url: ch.url,
+                        logo: ch.logo || DEFAULT_LOGO,
+                    }));
+                    localStorage.setItem('lastPlaylist', JSON.stringify(allChannels));
+                    localStorage.setItem('playlistName', file.name || 'Playlist');
+                    displayChannels(allChannels);
+                    if (allChannels.length > 0) playStream(allChannels[0].url);
                 }
-            } catch {
-                status.textContent = "❌ Invalid JSON file";
-            }
+            } catch {}
         } else if (file.name.endsWith('.txt')) {
             if (content.trim()) {
                 playStream(content.trim());
@@ -523,8 +655,31 @@ fileInput.addEventListener('change', (e) => {
                 channelList.innerHTML = '';
                 allChannels = [];
             }
+        } else {
+            if (content.trim().startsWith('#EXTM3U') || content.includes('#EXTINF')) {
+                parseM3U(content);
+                localStorage.setItem('playlistName', file.name || 'Playlist');
+            } else {
+                try {
+                    const json = JSON.parse(content);
+                    if (json.url) {
+                        playStream(json.url);
+                        localStorage.removeItem('lastPlaylist');
+                        channelList.innerHTML = '';
+                        allChannels = [];
+                    }
+                } catch {
+                    if (content.trim().startsWith('http')) {
+                        playStream(content.trim());
+                        localStorage.removeItem('lastPlaylist');
+                        channelList.innerHTML = '';
+                        allChannels = [];
+                    }
+                }
+            }
         }
-        showPlayerNotification("File uploaded and loaded successfully.");
+        showPlayerNotification("File uploaded and loaded successfully.", 2200);
+        fileInput.value = "";
     };
     reader.readAsText(file);
 });
@@ -533,7 +688,7 @@ loadUrlBtn.addEventListener('click', () => {
     const url = urlInput.value.trim();
     if (!url) return;
     if (isDuplicateUpload({type:'url', name:url, url})) {
-        showPlayerNotification("Duplicate URL upload detected!");
+        showPlayerNotification("Duplicate URL upload detected!", 2000);
         return;
     }
     history.push({ type: 'url', name: url, url });
@@ -542,15 +697,53 @@ loadUrlBtn.addEventListener('click', () => {
     if (url.endsWith('.m3u')) {
         fetch(url)
             .then(res => res.text())
-            .then(parseM3U)
-            .catch(() => { status.textContent = "❌ Failed to load M3U playlist"; });
+            .then(txt => {
+                parseM3U(txt);
+                localStorage.setItem('playlistName', url.split('/').pop() || url);
+            })
+            .catch(() => {});
+    } else if (url.endsWith('.json')) {
+        fetch(url)
+            .then(res => res.json())
+            .then(json => {
+                if (json.url) {
+                    playStream(json.url);
+                    localStorage.removeItem('lastPlaylist');
+                    channelList.innerHTML = '';
+                    allChannels = [];
+                } else if (Array.isArray(json.channels)) {
+                    allChannels = json.channels.map(ch => ({
+                        name: ch.name || 'Unknown Channel',
+                        url: ch.url,
+                        logo: ch.logo || DEFAULT_LOGO
+                    }));
+                    localStorage.setItem('lastPlaylist', JSON.stringify(allChannels));
+                    localStorage.setItem('playlistName', url.split('/').pop() || url);
+                    displayChannels(allChannels);
+                    if (allChannels.length > 0) playStream(allChannels[0].url);
+                }
+            })
+            .catch(() => {});
+    } else if (url.endsWith('.txt')) {
+        fetch(url)
+            .then(res => res.text())
+            .then(txt => {
+                if (txt.trim()) {
+                    playStream(txt.trim());
+                    localStorage.removeItem('lastPlaylist');
+                    channelList.innerHTML = '';
+                    allChannels = [];
+                }
+            })
+            .catch(() => {});
     } else {
         playStream(url);
         localStorage.removeItem('lastPlaylist');
         channelList.innerHTML = '';
         allChannels = [];
     }
-    showPlayerNotification("URL loaded successfully.");
+    showPlayerNotification("URL loaded successfully.", 2000);
+    urlInput.value = "";
 });
 
 exportFavoritesBtn.addEventListener('click', () => {
@@ -566,30 +759,48 @@ exportFavoritesBtn.addEventListener('click', () => {
     document.body.appendChild(link);
     link.click();
     setTimeout(() => { document.body.removeChild(link); }, 200);
-    showPlayerNotification("Favorites playlist exported!");
+    showPlayerNotification("Favorites playlist exported!", 2000);
 });
 
-const lastPlaylist = localStorage.getItem('lastPlaylist');
-if (lastPlaylist) {
-    allChannels = JSON.parse(lastPlaylist);
-    displayChannels(allChannels);
-    if (allChannels.length > 0) {
-        playStream(allChannels[0].url);
+(async () => {
+    let allUrls = [];
+    try {
+        const hist = JSON.parse(localStorage.getItem('history')) || [];
+        allUrls = allUrls.concat(hist.filter(h=>h.url).map(h=>h.url));
+        const pl = JSON.parse(localStorage.getItem('lastPlaylist')) || [];
+        allUrls = allUrls.concat(pl.map(c=>c.url));
+    } catch {}
+    if (!(await handleChannelInUrl(allUrls))) {
+        const lastPlaylist = localStorage.getItem('lastPlaylist');
+        if (lastPlaylist) {
+            allChannels = JSON.parse(lastPlaylist);
+            displayChannels(allChannels);
+            if (allChannels.length > 0) {
+                playStream(allChannels[0].url);
+            }
+        }
     }
-}
-
-displayHistory();
-displayFavorites();
-
-const url = new URLSearchParams(window.location.search).get('url');
-if (url) {
-    playStream(url);
-    localStorage.removeItem('lastPlaylist');
-    channelList.innerHTML = '';
-    allChannels = [];
-}
+    displayHistory();
+    displayFavorites();
+    // --- Playlist name display as playlist item (always after load/refresh) ---
+    const playlistName = localStorage.getItem('playlistName');
+    let playlistBar = document.getElementById('playlistBar');
+    if (!playlistBar) {
+        playlistBar = document.createElement('div');
+        playlistBar.id = 'playlistBar';
+        playlistBar.style = "width:100%;text-align:center;font-weight:600;padding:8px 0;background:rgba(37,99,235,0.08);color:#2563eb;border-bottom:1.5px solid #2563eb;";
+        channelList.parentNode.insertBefore(playlistBar, channelList);
+    }
+    if (playlistName) {
+        playlistBar.textContent = `Playlist: ${playlistName}`;
+        playlistBar.style.display = '';
+    } else {
+        playlistBar.style.display = 'none';
+    }
+})();
 
 window.playStream = playStream;
 window.toggleFavorite = window.toggleFavorite;
 window.loadHistoryFile = window.loadHistoryFile;
 window.deleteHistory = window.deleteHistory;
+window.deleteAllHistory = window.deleteAllHistory;
