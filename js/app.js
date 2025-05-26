@@ -1,7 +1,7 @@
 const PLAYER_POSTER = "https://bugsfreecdn.netlify.app/BugsfreeDefault/player-poster.webp";
 const DEFAULT_LOGO = "https://bugsfreecdn.netlify.app/BugsfreeDefault/logo.png";
 
-// --- M3U Playlist Parser (must be defined before use) ---
+// --- M3U Playlist Parser ---
 function parseM3U(content) {
     try {
         const lines = content.split('\n');
@@ -42,11 +42,6 @@ async function sha1(str) {
 function base64urlEncode(str) {
     return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function base64urlDecode(str) {
-    str = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (str.length % 4) str += '=';
-    return atob(str);
-}
 async function encryptChannelUrl(url) {
     const key = (await sha1(url)).substring(0, 16);
     let result = '';
@@ -65,9 +60,9 @@ async function decryptChannelUrl(enc, origList = null) {
     let allUrls = [];
     try {
         const hist = JSON.parse(localStorage.getItem('history')) || [];
-        allUrls = allUrls.concat(hist.filter(h=>h.url).map(h=>h.url));
+        allUrls = allUrls.concat(hist.filter(h => h.url).map(h => h.url));
         const pl = JSON.parse(localStorage.getItem('lastPlaylist')) || [];
-        allUrls = allUrls.concat(pl.map(c=>c.url));
+        allUrls = allUrls.concat(pl.map(c => c.url));
     } catch {}
     for (const url of allUrls) {
         const tryEnc = await encryptChannelUrl(url);
@@ -85,7 +80,7 @@ function updateLocalTime() {
     let ampm = hour >= 12 ? 'PM' : 'AM';
     let hour12 = hour % 12 || 12;
     let day = String(d.getDate()).padStart(2, '0');
-    let month = String(d.getMonth()+1).padStart(2, '0');
+    let month = String(d.getMonth() + 1).padStart(2, '0');
     let year = d.getFullYear();
     let timeStr = `${hour12}:${min.toString().padStart(2, '0')} ${ampm} (${day}-${month}-${year})`;
     el.textContent = timeStr;
@@ -150,7 +145,6 @@ function hidePlayerNotification() {
 }
 
 function playerSpinner(visible, msg) {
-    // Centered overlay, always
     if (visible) {
         showPlayerNotification(
             `<span class="spinner"><svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -163,7 +157,7 @@ function playerSpinner(visible, msg) {
     }
 }
 
-function isDuplicateUpload({type, name, url}) {
+function isDuplicateUpload({ type, name, url }) {
     if (type === 'url') {
         return history.some(h => h.type === 'url' && (h.url === url || h.name === name));
     }
@@ -176,7 +170,7 @@ function isDuplicateUpload({type, name, url}) {
 let idleTimeout = null;
 let idleHideMs = 2200;
 function setUiIdle(yes) {
-    ['toggleTheme','toggleSidebar','localTime'].forEach(id=>{
+    ['toggleTheme', 'toggleSidebar', 'localTime'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.toggle('idle', !!yes);
     });
@@ -184,13 +178,13 @@ function setUiIdle(yes) {
 function mouseActiveHandler() {
     setUiIdle(false);
     if (idleTimeout) clearTimeout(idleTimeout);
-    idleTimeout = setTimeout(()=>setUiIdle(true), idleHideMs);
+    idleTimeout = setTimeout(() => setUiIdle(true), idleHideMs);
 }
-['mousemove','keydown','mousedown','touchstart'].forEach(ev=>{
-    window.addEventListener(ev, mouseActiveHandler, {passive:true});
+['mousemove', 'keydown', 'mousedown', 'touchstart'].forEach(ev => {
+    window.addEventListener(ev, mouseActiveHandler, { passive: true });
 });
 mouseActiveHandler();
-['toggleTheme','toggleSidebar','localTime'].forEach(id=>{
+['toggleTheme', 'toggleSidebar', 'localTime'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hide-on-idle');
 });
@@ -239,13 +233,13 @@ document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.add('active');
         document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
         if (tab.dataset.tab === 'analysis') showAnalysisInitial();
-        document.querySelectorAll('.analysis-buttons button').forEach(b=>b.classList.remove('active'));
-        if(tab.dataset.tab==="analysis") {
-            if(analysisMode==="total") document.getElementById('showTotal').classList.add('active');
-            else if(analysisMode==="online") document.getElementById('showOnline').classList.add('active');
-            else if(analysisMode==="offline") document.getElementById('showOffline').classList.add('active');
+        document.querySelectorAll('.analysis-buttons button').forEach(b => b.classList.remove('active'));
+        if (tab.dataset.tab === "analysis") {
+            if (analysisMode === "total") document.getElementById('showTotal').classList.add('active');
+            else if (analysisMode === "online") document.getElementById('showOnline').classList.add('active');
+            else if (analysisMode === "offline") document.getElementById('showOffline').classList.add('active');
         }
-        if(tab.dataset.tab==="history") displayHistory();
+        if (tab.dataset.tab === "history") displayHistory();
     });
 });
 
@@ -253,10 +247,10 @@ document.getElementById('showTotal').onclick = () => { analysisMode = 'total'; u
 document.getElementById('showOnline').onclick = () => { analysisMode = 'online'; updateAnalysisList(); highlightAnalysisBtn(); };
 document.getElementById('showOffline').onclick = () => { analysisMode = 'offline'; updateAnalysisList(); highlightAnalysisBtn(); };
 function highlightAnalysisBtn() {
-    document.querySelectorAll('.analysis-buttons button').forEach(b=>b.classList.remove('active'));
-    if(analysisMode==="total") document.getElementById('showTotal').classList.add('active');
-    else if(analysisMode==="online") document.getElementById('showOnline').classList.add('active');
-    else if(analysisMode==="offline") document.getElementById('showOffline').classList.add('active');
+    document.querySelectorAll('.analysis-buttons button').forEach(b => b.classList.remove('active'));
+    if (analysisMode === "total") document.getElementById('showTotal').classList.add('active');
+    else if (analysisMode === "online") document.getElementById('showOnline').classList.add('active');
+    else if (analysisMode === "offline") document.getElementById('showOffline').classList.add('active');
 }
 analysisStatusSummary.addEventListener('click', e => {
     if (analysisMode === 'total') analysisMode = 'online';
@@ -279,7 +273,7 @@ function showAnalysisInitial() {
         analysisText.textContent = "Click the ✔ icon to check status";
         analysisChart.style.display = 'none';
     } else {
-        analysisText.textContent = `Total: ${analysisLast.total||0} | Online: ${analysisLast.online||0} | Offline: ${analysisLast.offline||0}`;
+        analysisText.textContent = `Total: ${analysisLast.total || 0} | Online: ${analysisLast.online || 0} | Offline: ${analysisLast.offline || 0}`;
         analysisChart.style.display = analysisLast.total ? 'block' : 'none';
         updateAnalysisList();
     }
@@ -405,11 +399,28 @@ async function playStream(url, retry = false, skipUpdateUrl = false) {
     }
 }
 
+// --------- CSP SAFE: getLogoHtml and image error handler ----------
+
 function getLogoHtml(logo, name) {
     const sanitizedLogo = logo ? sanitizeString(logo) : DEFAULT_LOGO;
     const sanitizedName = sanitizeString(name || "");
-    return `<img src="${sanitizedLogo}" alt="${sanitizedName}" class="ch-logo" onerror="this.onerror=null;this.src='${DEFAULT_LOGO}';this.classList.add('default-logo');">`;
+    // NO inline onerror. Use data-default-logo for fallback.
+    return `<img src="${sanitizedLogo}" alt="${sanitizedName}" class="ch-logo" data-default-logo="${DEFAULT_LOGO}">`;
 }
+
+// CSP SAFE: add error event listener after DOM insert
+function addLogoErrorHandlers(parentElement) {
+    parentElement.querySelectorAll('img.ch-logo').forEach(img => {
+        img.addEventListener('error', function () {
+            if (this.src !== this.getAttribute('data-default-logo')) {
+                this.src = this.getAttribute('data-default-logo');
+                this.classList.add('default-logo');
+            }
+        });
+    });
+}
+
+// --- Display Functions (NO Inline Handlers) ---
 
 function displayChannels(channels) {
     channelList.innerHTML = channels.map(ch => {
@@ -418,20 +429,40 @@ function displayChannels(channels) {
         const isFavorited = favorites.some(f => f.url === ch.url);
         const isCurrent = sanitizedUrl === currentChannelUrl;
         return `
-            <button data-url="${sanitizedUrl}" class="${isCurrent ? 'playlist-current' : ''} ${isFavorited ? 'playlist-favorite' : ''}" onclick="playStream('${sanitizedUrl}')">
+            <button class="channel-btn${isCurrent ? ' playlist-current' : ''}${isFavorited ? ' playlist-favorite' : ''}" data-url="${sanitizedUrl}">
                 ${getLogoHtml(ch.logo, ch.name)}
                 <i data-feather="tv" class="w-5 h-5"></i> ${sanitizedName}
                 <span style="margin-left:auto;display:flex;align-items:center;">
-                    <i data-feather="heart" class="favorite-btn w-5 h-5 ${isFavorited ? 'text-red-500' : ''}" onclick="event.stopPropagation(); window.toggleFavorite('${sanitizedUrl}', '${sanitizedName}', '${sanitizeString(ch.logo)}')"></i>
+                    <i data-feather="heart" class="favorite-btn w-5 h-5${isFavorited ? ' text-red-500' : ''}" data-url="${sanitizedUrl}" data-name="${sanitizedName}" data-logo="${sanitizeString(ch.logo)}"></i>
                 </span>
             </button>
         `;
     }).join('');
     refreshFeather();
     highlightPlaylist();
+
+    // Add event listeners
+    channelList.querySelectorAll('.channel-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playStream(btn.getAttribute('data-url'));
+        });
+    });
+    channelList.querySelectorAll('.favorite-btn').forEach(icon => {
+        icon.addEventListener('click', event => {
+            event.stopPropagation();
+            toggleFavorite(
+                icon.getAttribute('data-url'),
+                icon.getAttribute('data-name'),
+                icon.getAttribute('data-logo')
+            );
+        });
+    });
+
+    // CSP-safe error handler for logos
+    addLogoErrorHandlers(channelList);
 }
 
-window.toggleFavorite = function(url, name, logo) {
+function toggleFavorite(url, name, logo) {
     const index = favorites.findIndex(f => f.url === url);
     if (index === -1) {
         favorites.push({ url, name, logo });
@@ -448,17 +479,36 @@ function displayFavorites() {
         const sanitizedUrl = sanitizeString(f.url);
         const sanitizedName = sanitizeString(f.name);
         return `
-            <button data-url="${sanitizedUrl}" class="playlist-favorite${sanitizedUrl === currentChannelUrl ? ' playlist-current' : ''}" onclick="playStream('${sanitizedUrl}')">
+            <button class="favorite-channel-btn playlist-favorite${sanitizedUrl === currentChannelUrl ? ' playlist-current' : ''}" data-url="${sanitizedUrl}">
                 ${getLogoHtml(f.logo, f.name)}
                 <i data-feather="tv" class="w-5 h-5"></i> ${sanitizedName}
                 <span style="margin-left:auto;display:flex;align-items:center;">
-                    <i data-feather="heart" class="favorite-btn w-5 h-5 text-red-500" onclick="event.stopPropagation(); window.toggleFavorite('${sanitizedUrl}', '${sanitizedName}', '${sanitizeString(f.logo)}')"></i>
+                    <i data-feather="heart" class="favorite-btn w-5 h-5 text-red-500" data-url="${sanitizedUrl}" data-name="${sanitizedName}" data-logo="${sanitizeString(f.logo)}"></i>
                 </span>
             </button>
         `;
     }).join('') : '<p>No favorites added.</p>';
     refreshFeather();
     highlightPlaylist();
+
+    favoritesList.querySelectorAll('.favorite-channel-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playStream(btn.getAttribute('data-url'));
+        });
+    });
+    favoritesList.querySelectorAll('.favorite-btn').forEach(icon => {
+        icon.addEventListener('click', event => {
+            event.stopPropagation();
+            toggleFavorite(
+                icon.getAttribute('data-url'),
+                icon.getAttribute('data-name'),
+                icon.getAttribute('data-logo')
+            );
+        });
+    });
+
+    // CSP-safe error handler for logos
+    addLogoErrorHandlers(favoritesList);
 }
 
 function displayHistory() {
@@ -471,18 +521,18 @@ function displayHistory() {
             }
             const sanitizedLabel = sanitizeString(label);
             return `
-                <button>
+                <button class="history-btn" data-index="${i}">
                     <span class="history-label"><i data-feather="${h.type === 'file' ? 'file' : 'link'}" class="w-5 h-5"></i> ${sanitizedLabel}</span>
                     <span style="margin-left:auto;display:flex;align-items:center;">
-                        <i data-feather="refresh-cw" class="action-btn w-5 h-5" title="Resync" onclick="event.stopPropagation(); window.loadHistoryFile(${i})"></i>
-                        <i data-feather="trash-2" class="delete-btn w-5 h-5" title="Delete" onclick="event.stopPropagation(); window.deleteHistory(${i})"></i>
+                        <i data-feather="refresh-cw" class="action-btn w-5 h-5" title="Resync" data-index="${i}"></i>
+                        <i data-feather="trash-2" class="delete-btn w-5 h-5" title="Delete" data-index="${i}"></i>
                     </span>
                 </button>
             `;
         }).join('');
         html += `
             <div class="history-list-bar">
-                <button class="history-deleteall-btn" onclick="window.deleteAllHistory()"><i data-feather="trash-2" style="vertical-align: middle;"></i> Delete All</button>
+                <button class="history-deleteall-btn" id="deleteAllHistoryBtn"><i data-feather="trash-2" style="vertical-align: middle;"></i> Delete All</button>
             </div>
         `;
     } else {
@@ -490,9 +540,38 @@ function displayHistory() {
     }
     historyList.innerHTML = html;
     refreshFeather();
+
+    historyList.querySelectorAll('.history-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idx = btn.getAttribute('data-index');
+            await loadHistoryFile(Number(idx));
+        });
+    });
+    historyList.querySelectorAll('.action-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const idx = btn.getAttribute('data-index');
+            await loadHistoryFile(Number(idx));
+        });
+    });
+    historyList.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = btn.getAttribute('data-index');
+            deleteHistory(Number(idx));
+        });
+    });
+    const delAllBtn = document.getElementById('deleteAllHistoryBtn');
+    if (delAllBtn) {
+        delAllBtn.addEventListener('click', () => {
+            deleteAllHistory();
+        });
+    }
 }
 
-window.loadHistoryFile = async function(index) {
+// --- History/Favorites/Playlist Actions (no window.*) ---
+
+async function loadHistoryFile(index) {
     const item = history[index];
     if (item.type === 'file' && item.content) {
         if (item.name.endsWith('.m3u')) {
@@ -528,16 +607,16 @@ window.loadHistoryFile = async function(index) {
             allChannels = [];
         }
     }
-};
+}
 
-window.deleteHistory = function(index) {
+function deleteHistory(index) {
     history.splice(index, 1);
     localStorage.setItem('history', JSON.stringify(history));
     displayHistory();
     showPlayerNotification("History entry deleted.", 1800);
-};
+}
 
-window.deleteAllHistory = function() {
+function deleteAllHistory() {
     if (!history.length) return;
     if (confirm("Are you sure you want to delete all history?")) {
         history = [];
@@ -545,9 +624,10 @@ window.deleteAllHistory = function() {
         displayHistory();
         showPlayerNotification("All history deleted.", 2000);
     }
-};
+}
 
-async function analyzePlaylist(manual=false) {
+// --- Analysis ---
+async function analyzePlaylist(manual = false) {
     analysisText.textContent = manual ? "Checking status..." : "Checking...";
     analysisChart.style.display = 'block';
     if (!allChannels.length) {
@@ -563,21 +643,21 @@ async function analyzePlaylist(manual=false) {
         let ok = false;
         try {
             if (channel.url.endsWith('.m3u8') || channel.url.endsWith('.ts')) {
-                let r = await fetch(channel.url, {method:'GET', mode:'no-cors', cache:'no-store'});
+                let r = await fetch(channel.url, { method: 'GET', mode: 'no-cors', cache: 'no-store' });
                 ok = (r.status === 200 || r.type === 'opaque');
             } else if (channel.url.endsWith('.mpd') || channel.url.endsWith('.mp4')) {
-                let r = await fetch(channel.url, {method:'HEAD', mode:'cors', cache:'no-store'});
+                let r = await fetch(channel.url, { method: 'HEAD', mode: 'cors', cache: 'no-store' });
                 ok = r.ok && r.headers.get('content-type') && r.headers.get('content-type').includes('video');
             } else if (/^http(s)?:\/\//.test(channel.url)) {
-                let r = await fetch(channel.url, {method:'HEAD', mode:'no-cors', cache:'no-store'});
+                let r = await fetch(channel.url, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' });
                 ok = (r.status === 200 || r.type === 'opaque');
             }
-        } catch {}
-        if(ok) { online++; onlineList.push(channel); }
+        } catch { }
+        if (ok) { online++; onlineList.push(channel); }
         else offlineList.push(channel);
     }));
     const offline = total - online;
-    analysisLast = {total, online, offline, list: allChannels, onlineList, offlineList};
+    analysisLast = { total, online, offline, list: allChannels, onlineList, offlineList };
     analysisText.textContent = `Total: ${total} | Online: ${online} | Offline: ${offline}`;
     const ctx = analysisChart.getContext('2d');
     ctx.clearRect(0, 0, analysisChart.width, analysisChart.height);
@@ -606,6 +686,7 @@ function updateAnalysisList() {
     displayChannels(list.length ? list : []);
 }
 
+// --- UI Actions ---
 searchInput.addEventListener('input', () => {
     const query = searchInput.value.toLowerCase();
     const filteredChannels = allChannels.filter(ch => ch.name.toLowerCase().includes(query));
@@ -615,7 +696,7 @@ searchInput.addEventListener('input', () => {
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (isDuplicateUpload({type:'file', name:file.name})) {
+    if (isDuplicateUpload({ type: 'file', name: file.name })) {
         showPlayerNotification("Duplicate file upload detected!", 2000);
         return;
     }
@@ -647,7 +728,7 @@ fileInput.addEventListener('change', (e) => {
                     displayChannels(allChannels);
                     if (allChannels.length > 0) playStream(allChannels[0].url);
                 }
-            } catch {}
+            } catch { }
         } else if (file.name.endsWith('.txt')) {
             if (content.trim()) {
                 playStream(content.trim());
@@ -687,7 +768,7 @@ fileInput.addEventListener('change', (e) => {
 loadUrlBtn.addEventListener('click', () => {
     const url = urlInput.value.trim();
     if (!url) return;
-    if (isDuplicateUpload({type:'url', name:url, url})) {
+    if (isDuplicateUpload({ type: 'url', name: url, url })) {
         showPlayerNotification("Duplicate URL upload detected!", 2000);
         return;
     }
@@ -701,7 +782,7 @@ loadUrlBtn.addEventListener('click', () => {
                 parseM3U(txt);
                 localStorage.setItem('playlistName', url.split('/').pop() || url);
             })
-            .catch(() => {});
+            .catch(() => { });
     } else if (url.endsWith('.json')) {
         fetch(url)
             .then(res => res.json())
@@ -723,7 +804,7 @@ loadUrlBtn.addEventListener('click', () => {
                     if (allChannels.length > 0) playStream(allChannels[0].url);
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     } else if (url.endsWith('.txt')) {
         fetch(url)
             .then(res => res.text())
@@ -735,7 +816,7 @@ loadUrlBtn.addEventListener('click', () => {
                     allChannels = [];
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     } else {
         playStream(url);
         localStorage.removeItem('lastPlaylist');
@@ -752,7 +833,7 @@ exportFavoritesBtn.addEventListener('click', () => {
     favorites.forEach(f => {
         m3u += `#EXTINF:-1${f.logo ? ` tvg-logo="${f.logo}"` : ""},${f.name || "Favorite"}\n${f.url}\n`;
     });
-    const blob = new Blob([m3u], {type: 'audio/x-mpegurl'});
+    const blob = new Blob([m3u], { type: 'audio/x-mpegurl' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'favorites.m3u';
@@ -762,14 +843,15 @@ exportFavoritesBtn.addEventListener('click', () => {
     showPlayerNotification("Favorites playlist exported!", 2000);
 });
 
+// --- Initial Load ---
 (async () => {
     let allUrls = [];
     try {
         const hist = JSON.parse(localStorage.getItem('history')) || [];
-        allUrls = allUrls.concat(hist.filter(h=>h.url).map(h=>h.url));
+        allUrls = allUrls.concat(hist.filter(h => h.url).map(h => h.url));
         const pl = JSON.parse(localStorage.getItem('lastPlaylist')) || [];
-        allUrls = allUrls.concat(pl.map(c=>c.url));
-    } catch {}
+        allUrls = allUrls.concat(pl.map(c => c.url));
+    } catch { }
     if (!(await handleChannelInUrl(allUrls))) {
         const lastPlaylist = localStorage.getItem('lastPlaylist');
         if (lastPlaylist) {
@@ -798,9 +880,3 @@ exportFavoritesBtn.addEventListener('click', () => {
         playlistBar.style.display = 'none';
     }
 })();
-
-window.playStream = playStream;
-window.toggleFavorite = window.toggleFavorite;
-window.loadHistoryFile = window.loadHistoryFile;
-window.deleteHistory = window.deleteHistory;
-window.deleteAllHistory = window.deleteAllHistory;
