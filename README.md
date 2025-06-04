@@ -122,3 +122,8 @@ MIT License
 ## Credits
 
 Made with ❤️ by Bugsfree Studio.
+
+## Donate the project
+- DOGE: <b>DEtH2yFUjjUEBUyd3scjs38X7S1Z7ee7zD</b>
+- BTC Lightening: <b>bugsfree@speed.app</b>
+- SOL: <b>bugsfree.sol</b>
